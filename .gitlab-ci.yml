@@ -1,0 +1,154 @@
+variables:
+  TERRAFORM_PATH: 'C:\Terraform\terraform.exe'
+  JQ_PATH: 'C:\Jq\jq.exe'
+
+
+stages:
+  - show
+  - plan
+  - replace
+  - destroy-resources
+  - provision-dev
+
+
+show-job:       
+  stage: show
+  before_script:
+    - echo "ENVIRONMENT_NAME --- $ENVIRONMENT_NAME"
+    - echo "G_AWS_ACCOUNT_ID_DEV --- $G_AWS_ACCOUNT_ID_DEV"
+
+    - if($ENVIRONMENT_NAME -eq 'dev') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV }
+    - if($ENVIRONMENT_NAME -eq 'test') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV }
+    - if($ENVIRONMENT_NAME -eq 'prod') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_PROD }
+    - echo "ACCOUNT ID --- $aws_account_id"
+
+    - $assumedRoleHashMap = aws sts assume-role --role-arn arn:aws:iam::"$aws_account_id":role/GitlabRunnerDeployRole --role-session-name assumed-deploy-role | ConvertFrom-Json
+    - $env:AWS_ACCESS_KEY_ID=$assumedRoleHashMap.Credentials.AccessKeyId
+    - $env:AWS_SECRET_ACCESS_KEY=$assumedRoleHashMap.Credentials.SecretAccessKey
+    - $env:AWS_SESSION_TOKEN=$assumedRoleHashMap.Credentials.SessionToken
+
+  script:
+    - echo "Backend config is backend-config-dev.tfbackend"
+    - '& $TERRAFORM_PATH -chdir=terraform init -backend-config="backend-config-$ENVIRONMENT_NAME.tfbackend" '
+    - echo "Displaying resources in $ENVIRONMENT_NAME ..."
+    - '& $TERRAFORM_PATH -chdir=terraform show -json > tf-state.json'
+    - (Get-Content tf-state.json | ConvertFrom-Json).values.root_module.resources | Where-Object {$_.mode -ne "data"} | ForEach-Object { $_.address + "[\`"" + $_.values.name + "\`"]" }
+  when: manual
+  only:
+    variables:
+      - $ENVIRONMENT_NAME
+
+plan-job:
+  stage: plan
+  before_script:
+    - echo "ENVIRONMENT_NAME --- $ENVIRONMENT_NAME"
+    - echo "G_AWS_ACCOUNT_ID_DEV --- $G_AWS_ACCOUNT_ID_DEV"
+
+    - if($ENVIRONMENT_NAME -eq 'dev') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV }
+    - if($ENVIRONMENT_NAME -eq 'test') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV }
+    - if($ENVIRONMENT_NAME -eq 'prod') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_PROD }
+    - echo "ACCOUNT ID --- $aws_account_id"
+
+    - $assumedRoleHashMap = aws sts assume-role --role-arn arn:aws:iam::"$aws_account_id":role/GitlabRunnerDeployRole --role-session-name assumed-deploy-role | ConvertFrom-Json
+    - $env:AWS_ACCESS_KEY_ID=$assumedRoleHashMap.Credentials.AccessKeyId
+    - $env:AWS_SECRET_ACCESS_KEY=$assumedRoleHashMap.Credentials.SecretAccessKey
+    - $env:AWS_SESSION_TOKEN=$assumedRoleHashMap.Credentials.SessionToken
+
+  script:
+    - echo "Backend config is backend-config-dev.tfbackend"
+    - '& $TERRAFORM_PATH -chdir=terraform init -backend-config="backend-config-$ENVIRONMENT_NAME.tfbackend" '
+    - echo "Showing plan in $ENVIRONMENT_NAME ..."
+    - '& $TERRAFORM_PATH -chdir=terraform plan -input=false --var-file="variables/$ENVIRONMENT_NAME.auto.tfvars"'
+
+  when: manual
+  only:
+    variables:
+      - $ENVIRONMENT_NAME
+
+replace-job:
+  stage: replace
+  before_script:
+    - echo "ENVIRONMENT_NAME --- $ENVIRONMENT_NAME"
+    - echo "G_AWS_ACCOUNT_ID_DEV --- $G_AWS_ACCOUNT_ID_DEV"
+
+    - if($ENVIRONMENT_NAME -eq 'dev') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV }
+    - if($ENVIRONMENT_NAME -eq 'test') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV }
+    - if($ENVIRONMENT_NAME -eq 'prod') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_PROD }
+    - echo "ACCOUNT ID --- $aws_account_id"
+
+    - $assumedRoleHashMap = aws sts assume-role --role-arn arn:aws:iam::"$aws_account_id":role/GitlabRunnerDeployRole --role-session-name assumed-deploy-role | ConvertFrom-Json
+    - $env:AWS_ACCESS_KEY_ID=$assumedRoleHashMap.Credentials.AccessKeyId
+    - $env:AWS_SECRET_ACCESS_KEY=$assumedRoleHashMap.Credentials.SecretAccessKey
+    - $env:AWS_SESSION_TOKEN=$assumedRoleHashMap.Credentials.SessionToken
+
+  script:
+    - echo "Backend config is backend-config-dev.tfbackend"
+    - '& $TERRAFORM_PATH -chdir=terraform init -backend-config="backend-config-$ENVIRONMENT_NAME.tfbackend" '
+    - echo "Replacing resources in $ENVIRONMENT_NAME ..."
+    - echo "Resources --- $REPLACE_RESOURCES"
+    - foreach ($r in $REPLACE_RESOURCES)
+      {
+         & $TERRAFORM_PATH -chdir=terraform apply -replace="$r" -auto-approve --var-file="variables/$ENVIRONMENT_NAME.auto.tfvars"
+      }
+    
+  when: 
+    manual
+  only:
+    variables:
+      - $ENVIRONMENT_NAME
+      - $REPLACE_RESOURCES
+
+destroy-resources-job:
+  stage: destroy-resources
+  before_script:
+    - echo "ENVIRONMENT_NAME --- $ENVIRONMENT_NAME"
+    - echo "G_AWS_ACCOUNT_ID_DEV --- $G_AWS_ACCOUNT_ID_DEV"
+
+    - if($ENVIRONMENT_NAME -eq 'dev') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV }
+    - if($ENVIRONMENT_NAME -eq 'test') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV }
+    - if($ENVIRONMENT_NAME -eq 'prod') { Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_PROD }
+    - echo "ACCOUNT ID --- $aws_account_id"
+
+    - $assumedRoleHashMap = aws sts assume-role --role-arn arn:aws:iam::"$aws_account_id":role/GitlabRunnerDeployRole --role-session-name assumed-deploy-role | ConvertFrom-Json
+    - $env:AWS_ACCESS_KEY_ID=$assumedRoleHashMap.Credentials.AccessKeyId
+    - $env:AWS_SECRET_ACCESS_KEY=$assumedRoleHashMap.Credentials.SecretAccessKey
+    - $env:AWS_SESSION_TOKEN=$assumedRoleHashMap.Credentials.SessionToken
+  script:
+    - echo "Backend config is backend-config-dev.tfbackend"
+    - '& $TERRAFORM_PATH -chdir=terraform init -backend-config="backend-config-$ENVIRONMENT_NAME.tfbackend" '
+    - echo "Destroying resources in $ENVIRONMENT_NAME ..."
+    - echo "Resources --- $DESTROY_RESOURCES"
+    - foreach ($r in $DESTROY_RESOURCES)
+      {
+         & $TERRAFORM_PATH -chdir=terraform destroy -target "$r" -input=false -auto-approve --var-file="variables/$ENVIRONMENT_NAME.auto.tfvars"
+      }
+  when: manual
+  only:
+    variables:
+      - $ENVIRONMENT_NAME
+      - $DESTROY_RESOURCES
+
+provision-dev-job:       
+  stage: provision-dev
+  before_script:
+    - echo "ENVIRONMENT_NAME --- $ENVIRONMENT_NAME"
+    - echo "G_AWS_ACCOUNT_ID_DEV --- $G_AWS_ACCOUNT_ID_DEV"
+
+    - Set-Variable -Name "aws_account_id" -Value $G_AWS_ACCOUNT_ID_DEV
+    - echo "ACCOUNT ID --- $aws_account_id"
+
+    - $assumedRoleHashMap = aws sts assume-role --role-arn arn:aws:iam::"$aws_account_id":role/GitlabRunnerDeployRole --role-session-name assumed-deploy-role | ConvertFrom-Json
+    - $env:AWS_ACCESS_KEY_ID=$assumedRoleHashMap.Credentials.AccessKeyId
+    - $env:AWS_SECRET_ACCESS_KEY=$assumedRoleHashMap.Credentials.SecretAccessKey
+    - $env:AWS_SESSION_TOKEN=$assumedRoleHashMap.Credentials.SessionToken
+    - 'aws cloudformation deploy --stack-name terraform-state-locking --template-file terraform\cloudformation\cfn-s3-dynamo-tf-backend.yml --parameter-overrides Environment=dev --no-fail-on-empty-changeset'
+
+  script:
+    - echo "Backend config is backend-config-dev.tfbackend"
+    - '& $TERRAFORM_PATH -chdir=terraform init -backend-config="backend-config-dev.tfbackend" '
+    - '& $TERRAFORM_PATH -chdir=terraform apply -auto-approve --var-file="variables/dev.auto.tfvars" '
+  when: manual
+  environment:
+    name: dev
+
+

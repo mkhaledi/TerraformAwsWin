@@ -1,0 +1,52 @@
+Description: Cloudformation template to set up two encrypted queues, one in use and one for storage of failed messages
+
+Parameters:
+  QueueName:
+    Type: String
+    Description: The name of the main queue
+  FailedMessageQueueName:
+    Type: String
+    Description: The name of the queue that holds failed messages (Read 10 times but never deleted from queue)
+  RoleArn:
+    Type: String
+    Description: The role that needs read/write access to main queue.
+    Default: arn:aws:iam::<AccountID>:role/GitlabRunnerDeployRole
+
+
+
+Resources:
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      QueueName: !Ref FailedMessageQueueName
+      MessageRetentionPeriod: 1209600 #14 days in seconds
+  ProductionDemandQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      QueueName: !Ref QueueName
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 10
+  SQSPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Id: ProductionDemandQueuePolicy
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Application-ReadWrite
+            Effect: Allow
+            Principal:
+              AWS: !Ref RoleArn
+            Action: [
+               "sqs:SendMessage",
+               "sqs:ReceiveMessage",
+               "sqs:GetQueueUrl",
+               "sqs:DeleteMessage",
+               "sqs:GetQueueAttributes"
+             ]
+            Resource: !GetAtt ProductionDemandQueue.Arn
+      Queues:
+        - !Ref ProductionDemandQueue

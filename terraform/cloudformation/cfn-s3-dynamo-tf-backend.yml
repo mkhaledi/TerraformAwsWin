@@ -1,0 +1,46 @@
+Parameters:
+  Environment:
+    Type: String
+    Description: The environment this template is being deployed to.
+    Default: dev
+
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LoggingConfiguration:
+        LogFilePrefix: 'tf-log'
+        DestinationBucketName: !Ref LogBucket
+      BucketName: !Join ['',['s3-tf-statebucket-', !Ref Environment]]
+      VersioningConfiguration:
+        Status: Enabled
+  LogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      BucketName:  !Join ['',['common-log-bucket-', !Ref Environment]]
+  LockingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: LockID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: LockID
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      SSESpecification:
+        SSEEnabled: true
+      TableName: terraform-lock
